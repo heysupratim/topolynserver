@@ -28,5 +28,7 @@ dist-ssr
 .env.*
 !.env.example
 
-generated/prisma/*.db
+*.db
+*.db-journal
 *.sqlite
+generated/prisma
