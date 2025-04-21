@@ -42,7 +42,7 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/inventory", async (req, res) => {
   try {
     const items = await prisma.inventoryItem.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: { createdAt: "asc" },
     });
     res.json(items);
   } catch (error) {
