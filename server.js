@@ -48,8 +48,16 @@ app.get("/api/inventory", async (req, res) => {
       include:
         includeLinks === "true"
           ? {
-              linkedToItems: true,
-              linkedFromItems: true,
+              outgoingLinks: {
+                include: {
+                  targetItem: true,
+                },
+              },
+              incomingLinks: {
+                include: {
+                  sourceItem: true,
+                },
+              },
             }
           : undefined,
     });
@@ -67,8 +75,16 @@ app.get("/api/inventory/:id", async (req, res) => {
     const item = await prisma.inventoryItem.findUnique({
       where: { id },
       include: {
-        linkedToItems: true,
-        linkedFromItems: true,
+        outgoingLinks: {
+          include: {
+            targetItem: true,
+          },
+        },
+        incomingLinks: {
+          include: {
+            sourceItem: true,
+          },
+        },
       },
     });
 
@@ -145,7 +161,7 @@ app.delete("/api/inventory/:id", async (req, res) => {
   }
 });
 
-// Get linked items for a specific inventory item
+// Get links for a specific inventory item
 app.get("/api/inventory/:id/links", async (req, res) => {
   try {
     const { id } = req.params;
@@ -154,7 +170,11 @@ app.get("/api/inventory/:id/links", async (req, res) => {
     const item = await prisma.inventoryItem.findUnique({
       where: { id },
       include: {
-        linkedToItems: true,
+        outgoingLinks: {
+          include: {
+            targetItem: true,
+          },
+        },
       },
     });
 
@@ -162,7 +182,14 @@ app.get("/api/inventory/:id/links", async (req, res) => {
       return res.status(404).json({ error: "Item not found" });
     }
 
-    res.json(item.linkedToItems);
+    // Format the response to include link type and target item details
+    const links = item.outgoingLinks.map((link) => ({
+      id: link.id,
+      linkType: link.linkType,
+      targetItem: link.targetItem,
+    }));
+
+    res.json(links);
   } catch (error) {
     console.error("Error fetching linked items:", error);
     res.status(500).json({ error: "Failed to fetch linked items" });
@@ -173,10 +200,14 @@ app.get("/api/inventory/:id/links", async (req, res) => {
 app.post("/api/inventory/:id/links", async (req, res) => {
   try {
     const { id } = req.params;
-    const { linkedItemId } = req.body;
+    const { linkedItemId, linkType } = req.body;
 
     if (!linkedItemId) {
       return res.status(400).json({ error: "Linked item ID is required" });
+    }
+
+    if (!linkType) {
+      return res.status(400).json({ error: "Link type is required" });
     }
 
     // Check if both items exist
@@ -189,49 +220,102 @@ app.post("/api/inventory/:id/links", async (req, res) => {
       return res.status(404).json({ error: "One or both items not found" });
     }
 
-    // Add the link
-    const updatedItem = await prisma.inventoryItem.update({
-      where: { id },
+    // Check if the link already exists
+    const existingLink = await prisma.itemLink.findFirst({
+      where: {
+        sourceItemId: id,
+        targetItemId: linkedItemId,
+      },
+    });
+
+    if (existingLink) {
+      return res.status(409).json({
+        error: "Link already exists",
+        link: existingLink,
+      });
+    }
+
+    // Create the link with the specified type
+    const newLink = await prisma.itemLink.create({
       data: {
-        linkedToItems: {
+        linkType,
+        sourceItem: {
+          connect: { id },
+        },
+        targetItem: {
           connect: { id: linkedItemId },
         },
       },
       include: {
-        linkedToItems: true,
+        targetItem: true,
       },
     });
 
-    res.json(updatedItem);
+    res.status(201).json(newLink);
   } catch (error) {
     console.error("Error linking items:", error);
     res.status(500).json({ error: "Failed to link items" });
   }
 });
 
-// Remove a link between two inventory items
-app.delete("/api/inventory/:id/links/:linkedItemId", async (req, res) => {
+// Update a link between two inventory items
+app.put("/api/inventory/:id/links/:linkId", async (req, res) => {
   try {
-    const { id, linkedItemId } = req.params;
+    const { id, linkId } = req.params;
+    const { linkType } = req.body;
 
-    // Check if both items exist
-    const sourceItem = await prisma.inventoryItem.findUnique({ where: { id } });
-    const targetItem = await prisma.inventoryItem.findUnique({
-      where: { id: linkedItemId },
-    });
-
-    if (!sourceItem || !targetItem) {
-      return res.status(404).json({ error: "One or both items not found" });
+    if (!linkType) {
+      return res.status(400).json({ error: "Link type is required" });
     }
 
-    // Remove the link
-    const updatedItem = await prisma.inventoryItem.update({
-      where: { id },
-      data: {
-        linkedToItems: {
-          disconnect: { id: linkedItemId },
-        },
+    // Check if the link exists and belongs to the source item
+    const existingLink = await prisma.itemLink.findFirst({
+      where: {
+        id: linkId,
+        sourceItemId: id,
       },
+    });
+
+    if (!existingLink) {
+      return res.status(404).json({ error: "Link not found" });
+    }
+
+    // Update the link type
+    const updatedLink = await prisma.itemLink.update({
+      where: { id: linkId },
+      data: { linkType },
+      include: {
+        targetItem: true,
+      },
+    });
+
+    res.json(updatedLink);
+  } catch (error) {
+    console.error("Error updating link:", error);
+    res.status(500).json({ error: "Failed to update link" });
+  }
+});
+
+// Remove a link between two inventory items
+app.delete("/api/inventory/:id/links/:linkId", async (req, res) => {
+  try {
+    const { id, linkId } = req.params;
+
+    // Check if the link exists and belongs to the source item
+    const existingLink = await prisma.itemLink.findFirst({
+      where: {
+        id: linkId,
+        sourceItemId: id,
+      },
+    });
+
+    if (!existingLink) {
+      return res.status(404).json({ error: "Link not found" });
+    }
+
+    // Delete the link
+    await prisma.itemLink.delete({
+      where: { id: linkId },
     });
 
     res.json({ message: "Link removed successfully" });

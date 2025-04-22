@@ -19,7 +19,22 @@ model InventoryItem {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   
-  // Self-relation for linking items
-  linkedToItems     InventoryItem[] @relation("ItemLinks")
-  linkedFromItems   InventoryItem[] @relation("ItemLinks")
+  // Replace direct many-to-many with relation through ItemLink
+  outgoingLinks ItemLink[] @relation("SourceItem")
+  incomingLinks ItemLink[] @relation("TargetItem")
+}
+
+model ItemLink {
+  id        String    @id @default(uuid())
+  linkType  String    // Type of the link between items
+  createdAt DateTime  @default(now())
+  
+  // Relations to source and target items
+  sourceItemId String
+  sourceItem   InventoryItem @relation("SourceItem", fields: [sourceItemId], references: [id], onDelete: Cascade)
+  
+  targetItemId String
+  targetItem   InventoryItem @relation("TargetItem", fields: [targetItemId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceItemId, targetItemId]) // Ensure no duplicate links between the same items
 }
