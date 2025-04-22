@@ -41,8 +41,17 @@ app.get("/api/health", async (req, res) => {
 // Get all inventory items
 app.get("/api/inventory", async (req, res) => {
   try {
+    const { includeLinks } = req.query;
+
     const items = await prisma.inventoryItem.findMany({
       orderBy: { createdAt: "asc" },
+      include:
+        includeLinks === "true"
+          ? {
+              linkedToItems: true,
+              linkedFromItems: true,
+            }
+          : undefined,
     });
     res.json(items);
   } catch (error) {
@@ -57,6 +66,10 @@ app.get("/api/inventory/:id", async (req, res) => {
     const { id } = req.params;
     const item = await prisma.inventoryItem.findUnique({
       where: { id },
+      include: {
+        linkedToItems: true,
+        linkedFromItems: true,
+      },
     });
 
     if (!item) {
@@ -129,6 +142,102 @@ app.delete("/api/inventory/:id", async (req, res) => {
   } catch (error) {
     console.error("Error deleting inventory item:", error);
     res.status(500).json({ error: "Failed to delete inventory item" });
+  }
+});
+
+// Get linked items for a specific inventory item
+app.get("/api/inventory/:id/links", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if the item exists
+    const item = await prisma.inventoryItem.findUnique({
+      where: { id },
+      include: {
+        linkedToItems: true,
+      },
+    });
+
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    res.json(item.linkedToItems);
+  } catch (error) {
+    console.error("Error fetching linked items:", error);
+    res.status(500).json({ error: "Failed to fetch linked items" });
+  }
+});
+
+// Add a link between two inventory items
+app.post("/api/inventory/:id/links", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { linkedItemId } = req.body;
+
+    if (!linkedItemId) {
+      return res.status(400).json({ error: "Linked item ID is required" });
+    }
+
+    // Check if both items exist
+    const sourceItem = await prisma.inventoryItem.findUnique({ where: { id } });
+    const targetItem = await prisma.inventoryItem.findUnique({
+      where: { id: linkedItemId },
+    });
+
+    if (!sourceItem || !targetItem) {
+      return res.status(404).json({ error: "One or both items not found" });
+    }
+
+    // Add the link
+    const updatedItem = await prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        linkedToItems: {
+          connect: { id: linkedItemId },
+        },
+      },
+      include: {
+        linkedToItems: true,
+      },
+    });
+
+    res.json(updatedItem);
+  } catch (error) {
+    console.error("Error linking items:", error);
+    res.status(500).json({ error: "Failed to link items" });
+  }
+});
+
+// Remove a link between two inventory items
+app.delete("/api/inventory/:id/links/:linkedItemId", async (req, res) => {
+  try {
+    const { id, linkedItemId } = req.params;
+
+    // Check if both items exist
+    const sourceItem = await prisma.inventoryItem.findUnique({ where: { id } });
+    const targetItem = await prisma.inventoryItem.findUnique({
+      where: { id: linkedItemId },
+    });
+
+    if (!sourceItem || !targetItem) {
+      return res.status(404).json({ error: "One or both items not found" });
+    }
+
+    // Remove the link
+    const updatedItem = await prisma.inventoryItem.update({
+      where: { id },
+      data: {
+        linkedToItems: {
+          disconnect: { id: linkedItemId },
+        },
+      },
+    });
+
+    res.json({ message: "Link removed successfully" });
+  } catch (error) {
+    console.error("Error removing link between items:", error);
+    res.status(500).json({ error: "Failed to remove link between items" });
   }
 });
 
