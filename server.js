@@ -182,10 +182,11 @@ app.get("/api/inventory/:id/links", async (req, res) => {
       return res.status(404).json({ error: "Item not found" });
     }
 
-    // Format the response to include link type and target item details
+    // Format the response to include link type, port, and target item details
     const links = item.outgoingLinks.map((link) => ({
       id: link.id,
       linkType: link.linkType,
+      port: link.port, // Include the optional port field in the response
       targetItem: link.targetItem,
     }));
 
@@ -200,7 +201,7 @@ app.get("/api/inventory/:id/links", async (req, res) => {
 app.post("/api/inventory/:id/links", async (req, res) => {
   try {
     const { id } = req.params;
-    const { linkedItemId, linkType } = req.body;
+    const { linkedItemId, linkType, port } = req.body;
 
     if (!linkedItemId) {
       return res.status(400).json({ error: "Linked item ID is required" });
@@ -235,10 +236,11 @@ app.post("/api/inventory/:id/links", async (req, res) => {
       });
     }
 
-    // Create the link with the specified type
+    // Create the link with the specified type and optional port
     const newLink = await prisma.itemLink.create({
       data: {
         linkType,
+        port, // Include the optional port field
         sourceItem: {
           connect: { id },
         },
@@ -262,7 +264,7 @@ app.post("/api/inventory/:id/links", async (req, res) => {
 app.put("/api/inventory/:id/links/:linkId", async (req, res) => {
   try {
     const { id, linkId } = req.params;
-    const { linkType } = req.body;
+    const { linkType, port } = req.body;
 
     if (!linkType) {
       return res.status(400).json({ error: "Link type is required" });
@@ -280,10 +282,13 @@ app.put("/api/inventory/:id/links/:linkId", async (req, res) => {
       return res.status(404).json({ error: "Link not found" });
     }
 
-    // Update the link type
+    // Update the link type and optional port
     const updatedLink = await prisma.itemLink.update({
       where: { id: linkId },
-      data: { linkType },
+      data: {
+        linkType,
+        port, // Include the optional port field
+      },
       include: {
         targetItem: true,
       },

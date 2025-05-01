@@ -27,6 +27,7 @@ model InventoryItem {
 model ItemLink {
   id        String    @id @default(uuid())
   linkType  String    // Type of the link between items
+  port      String?   // Optional port specification for the link
   createdAt DateTime  @default(now())
   
   // Relations to source and target items
