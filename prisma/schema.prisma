@@ -22,6 +22,9 @@ model InventoryItem {
   // Replace direct many-to-many with relation through ItemLink
   outgoingLinks ItemLink[] @relation("SourceItem")
   incomingLinks ItemLink[] @relation("TargetItem")
+  
+  // Relation to services
+  services   Service[]
 }
 
 model ItemLink {
@@ -38,4 +41,16 @@ model ItemLink {
   targetItem   InventoryItem @relation("TargetItem", fields: [targetItemId], references: [id], onDelete: Cascade)
 
   @@unique([sourceItemId, targetItemId]) // Ensure no duplicate links between the same items
+}
+
+model Service {
+  id        String    @id @default(uuid())
+  name      String    // Required name of the service
+  imageUrl  String?   // Optional URL for the service image
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  // Relation to inventory item
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
 }

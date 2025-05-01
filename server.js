@@ -45,8 +45,9 @@ app.get("/api/inventory", async (req, res) => {
 
     const items = await prisma.inventoryItem.findMany({
       orderBy: { createdAt: "asc" },
-      include:
-        includeLinks === "true"
+      include: {
+        services: true,
+        ...(includeLinks === "true"
           ? {
               outgoingLinks: {
                 include: {
@@ -59,7 +60,8 @@ app.get("/api/inventory", async (req, res) => {
                 },
               },
             }
-          : undefined,
+          : {}),
+      },
     });
     res.json(items);
   } catch (error) {
@@ -75,6 +77,7 @@ app.get("/api/inventory/:id", async (req, res) => {
     const item = await prisma.inventoryItem.findUnique({
       where: { id },
       include: {
+        services: true,
         outgoingLinks: {
           include: {
             targetItem: true,
@@ -102,7 +105,7 @@ app.get("/api/inventory/:id", async (req, res) => {
 // Create a new inventory item
 app.post("/api/inventory", async (req, res) => {
   try {
-    const { name, type, ipAddress } = req.body;
+    const { name, type, ipAddress, services } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ error: "Name and type are required" });
@@ -113,6 +116,17 @@ app.post("/api/inventory", async (req, res) => {
         name,
         type,
         ipAddress,
+        services: services
+          ? {
+              create: services.map((service) => ({
+                name: service.name,
+                imageUrl: service.imageUrl,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        services: true,
       },
     });
 
@@ -136,6 +150,9 @@ app.put("/api/inventory/:id", async (req, res) => {
         type,
         ipAddress,
       },
+      include: {
+        services: true,
+      },
     });
 
     res.json(updatedItem);
@@ -158,6 +175,129 @@ app.delete("/api/inventory/:id", async (req, res) => {
   } catch (error) {
     console.error("Error deleting inventory item:", error);
     res.status(500).json({ error: "Failed to delete inventory item" });
+  }
+});
+
+// Get all services for an inventory item
+app.get("/api/inventory/:id/services", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if the item exists
+    const item = await prisma.inventoryItem.findUnique({
+      where: { id },
+      include: {
+        services: true,
+      },
+    });
+
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    res.json(item.services);
+  } catch (error) {
+    console.error("Error fetching services:", error);
+    res.status(500).json({ error: "Failed to fetch services" });
+  }
+});
+
+// Add a service to an inventory item
+app.post("/api/inventory/:id/services", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, imageUrl } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Service name is required" });
+    }
+
+    // Check if the item exists
+    const item = await prisma.inventoryItem.findUnique({ where: { id } });
+
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    const newService = await prisma.service.create({
+      data: {
+        name,
+        imageUrl,
+        inventoryItem: {
+          connect: { id },
+        },
+      },
+    });
+
+    res.status(201).json(newService);
+  } catch (error) {
+    console.error("Error adding service:", error);
+    res.status(500).json({ error: "Failed to add service" });
+  }
+});
+
+// Update a service
+app.put("/api/inventory/:id/services/:serviceId", async (req, res) => {
+  try {
+    const { id, serviceId } = req.params;
+    const { name, imageUrl } = req.body;
+
+    if (!name) {
+      return res.status(400).json({ error: "Service name is required" });
+    }
+
+    // Check if the service belongs to the specified item
+    const existingService = await prisma.service.findFirst({
+      where: {
+        id: serviceId,
+        inventoryItemId: id,
+      },
+    });
+
+    if (!existingService) {
+      return res.status(404).json({ error: "Service not found" });
+    }
+
+    const updatedService = await prisma.service.update({
+      where: { id: serviceId },
+      data: {
+        name,
+        imageUrl,
+      },
+    });
+
+    res.json(updatedService);
+  } catch (error) {
+    console.error("Error updating service:", error);
+    res.status(500).json({ error: "Failed to update service" });
+  }
+});
+
+// Delete a service from an inventory item
+app.delete("/api/inventory/:id/services/:serviceId", async (req, res) => {
+  try {
+    const { id, serviceId } = req.params;
+
+    // Check if the service belongs to the specified item
+    const existingService = await prisma.service.findFirst({
+      where: {
+        id: serviceId,
+        inventoryItemId: id,
+      },
+    });
+
+    if (!existingService) {
+      return res.status(404).json({ error: "Service not found" });
+    }
+
+    await prisma.service.delete({
+      where: { id: serviceId },
+    });
+
+    res.json({ message: "Service removed successfully" });
+  } catch (error) {
+    console.error("Error removing service:", error);
+    res.status(500).json({ error: "Failed to remove service" });
   }
 });
 
